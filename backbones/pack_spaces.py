@@ -17,8 +17,8 @@ from pathlib import Path
 
 import numpy as np
 
-SRC = Path("F:/lzk/paper_reading/af3_experiment/results")
-SSL = Path("F:/lzk/SPLASH/outputs")
+SRC = Path(__file__).resolve().parents[2] / "af3_experiment" / "results"  # relative to paper_submission_v3/code_release/backbones/
+SSL = SRC.parent.parent / "SPLASH" / "outputs"
 OUT = Path(__file__).resolve().parents[1] / "dist"
 MAP = {
     # release name -> (source npz, protocol-specific key remap)

@@ -20,6 +20,13 @@ from tadc.core import fit_readout, direction_alignment, gated_w
 
 N_PER, PCA_D, S0, W0 = 48, 128, 0.35, 0.02  # mainline config (factorial_SE)
 
+# ShipsEar: 9 ship types -> 5 aggregated classes (the paper's Table mapping)
+TYPE2CLS = {"Fishboat": "A", "Musselboat": "A", "Dredger": "A",
+            "Motorboat": "B", "Sailboat": "B",
+            "Passengers": "C",
+            "Oceanliner": "D", "RORO": "D",
+            "Naturalambientnoise": "E"}
+
 
 def classes_of(y):
     return sorted(set(y.tolist()))
@@ -40,10 +47,11 @@ def main():
             E_tr, E_te, Tx, labs = z["E_tr"], z["E_te"], z["Tx"], z["labs"]
             y_tr = z["y_tr"].astype(str)
             y_te = z["y_te"].astype(str)
+            labs_cls = np.array([TYPE2CLS.get(l, l) for l in labs.astype(str)])
             groups = classes_of(y_tr)
-            alpha = direction_alignment(E_tr, y_tr, Tx, labs, groups)
+            alpha = direction_alignment(E_tr, y_tr, Tx, labs_cls, groups)
             w = gated_w(alpha, W0)
-            predict = fit_readout(E_tr, y_tr, Tx, labs, groups, seed=sd, w=w,
+            predict = fit_readout(E_tr, y_tr, Tx, labs_cls, groups, seed=sd, w=w,
                                   s=S0, n_per=N_PER, pca_d=PCA_D, fam="gauss")
             PK = predict(E_te)
             PK_sum = PK if PK_sum is None else PK_sum + PK

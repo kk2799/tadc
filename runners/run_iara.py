@@ -49,7 +49,9 @@ def main():
     zs = {n: np.load(Path(args.emb_dir) / f"{n}.npz",
                      allow_pickle=True) for n in args.spaces}
     iid = zs[args.spaces[0]]["iid"].astype(int)
-    y_all = zs[args.spaces[0]]["y"].astype(str)
+    # embeddings carry integer labels 0-3; map to CLS4 names for core.py
+    y_raw = zs[args.spaces[0]]["y"]
+    y_all = np.array([CLS4[int(v)] for v in y_raw])
 
     # recording-level table (length grades come with the IARA distribution,
     # iara.csv: ID,Length; target = 0 (<50m) / 1 (<100m) / 2 (>=100m) / 3 BG)
@@ -72,7 +74,7 @@ def main():
             PKsum = None
             for n in args.spaces:
                 z = zs[n]
-                E, yy = z["E"], z["y"].astype(str)
+                E, yy = z["E"], np.array([CLS4[int(v)] for v in z["y"]])
                 predict = fit_readout(E[trm], yy[trm], z["Tx"], z["labs"], CLS4,
                                       seed=sd, w=0.0, s=S0, n_per=N_PER,
                                       pca_d=PCA_D, fam="gauss")
