@@ -65,9 +65,11 @@ def main():
     t = df["t"].values
 
     fold_auds = []
-    for fold, (a, _, _) in enumerate(official_splits(ids, t)):
+    for fold, (a, _, te_idx) in enumerate(official_splits(ids, t)):
         tr_ids = set(ids[a].tolist())
+        te_ids = set(ids[te_idx].tolist())  # only the test-fold recordings
         trm = np.array([r in tr_ids for r in iid])
+        tem = np.array([r in te_ids for r in iid])
         aud_scores = []
         for rsi in range(RNG_SEEDS):
             sd = 1000 * rsi + fold
@@ -82,7 +84,7 @@ def main():
                 PKsum = PK if PKsum is None else PKsum + PK
             pr = PKsum.argmax(1)
             votes = collections.defaultdict(list)
-            for p_, r in zip(pr, iid):
+            for p_, r in zip(pr[tem], iid[tem]):  # vote only on test windows
                 votes[r].append(int(p_))
             ymap = {int(r): int(v) for v, r in zip(
                 np.array([CLS4.index(c) for c in y_all]), iid)}
