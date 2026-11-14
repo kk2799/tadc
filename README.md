@@ -15,11 +15,16 @@ Main configuration (greedy-selected space pool per dataset, mean ± std over
 5 synthesis seeds; IARA is the official 5×2 cross-validation protocol with
 recording-level voting):
 
-| Dataset  | Metric        | TADC        | Full-label logistic regression |
-|----------|---------------|-------------|-------------------------------|
-| ShipsEar | window acc    | **86.38 ± 1.01** | 81.38 ± 0.42 |
-| DeepShip | window acc    | **77.50 ± 0.79** | 75.07 ± 0.46 |
-| IARA     | balanced acc  | 68.43 ± 1.30    | 69.01 ± 0.93 |
+| Dataset  | Metric        | TADC (paper)  | TADC (this repo) | Full-label logistic regression |
+|----------|---------------|---------------|------------------|-------------------------------|
+| ShipsEar | window acc    | 86.38 ± 1.01  | 88.62 ± 0.34     | 81.38 ± 0.42 |
+| DeepShip | window acc    | 77.50 ± 0.79  | 77.35 ± 0.76     | 75.07 ± 0.46 |
+| IARA     | balanced acc  | 68.43 ± 1.30  | 68.21 ± 0.96     | 69.01 ± 0.93 |
+
+DeepShip and IARA reproduce within noise. ShipsEar exceeds the paper by
+2.24 points because the freshly computed PROJ-AST projection (seed 0)
+happens to align better than the original — the paper's number is the
+conservative one.
 
 On ShipsEar and DeepShip, **10% of the labels already reaches full-annotation
 accuracy** (82.93 and 75.21).
