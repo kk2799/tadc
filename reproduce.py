@@ -31,7 +31,30 @@ PAPER = {
                                     "ssl_cqt_1", "ssl_cqt_2", "ssl_cqt_3p"]),
     "iara": ("68.43 +/- 1.30", ["clap_l", "clap_m", "da_clap_l"]),
 }
-WEIGHTS_URL = "https://github.com/kk2799/tadc/releases/download/v1.0/tadc_spaces.zip"
+WEIGHTS_TAG = "v1.0"  # release tag carrying tadc_spaces.zip (frozen space archives)
+
+
+def _weights_url():
+    """Derive the release asset URL from the git remote at run time, so no
+    repository owner is hard-coded in this file."""
+    import re as _re
+    import subprocess
+    try:
+        remote = subprocess.run(
+            ["git", "config", "--get", "remote.origin.url"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except Exception:
+        remote = ""
+    m = _re.search(r"github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$", remote)
+    if not m:
+        raise SystemExit(
+            "cannot locate the release: download tadc_spaces.zip from the "
+            "repository's Releases page (tag " + WEIGHTS_TAG + ") and unpack "
+            "it into embeddings/"
+        )
+    owner, repo = m.group(1), m.group(2)
+    return f"https://github.com/{owner}/{repo}/releases/download/{WEIGHTS_TAG}/tadc_spaces.zip"
 
 
 def have_embeddings(ds, spaces):
@@ -60,10 +83,11 @@ def run(ds):
 def download_weights():
     import urllib.request
     import zipfile
-    print("downloading", WEIGHTS_URL)
+    url = _weights_url()
+    print("downloading", url)
     dest = ROOT / "embeddings"
     dest.mkdir(exist_ok=True)
-    z, _ = urllib.request.urlretrieve(WEIGHTS_URL, dest / "tadc_spaces.zip")
+    z, _ = urllib.request.urlretrieve(url, dest / "tadc_spaces.zip")
     with zipfile.ZipFile(z) as f:
         f.extractall(dest)
     print("extracted to", dest)
