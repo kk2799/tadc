@@ -5,17 +5,18 @@
   python reproduce.py --dataset deepship       # one dataset
   python reproduce.py --download-weights       # fetch frozen space archives
 
-Paper numbers (mean +/- std over 5 synthesis seeds; IARA is the official
-5x2 cross-validation with recording voting):
+Paper numbers (unified zero-contact pool, six spaces per dataset, three
+synthesis seeds; IARA is the official 5x2 cross-validation with recording
+voting; DeepShip is the closed-form evaluation, exact):
 
-  ShipsEar  86.38 +/- 1.01   (7 spaces)
-  DeepShip  77.50 +/- 0.79   (6 spaces)
-  IARA      68.43 +/- 1.30   (3 spaces)
+  ShipsEar  85.92 +/- 0.41
+  DeepShip  78.25
+  IARA      70.03 +/- 0.01
 
 Per-dataset runners live in runners/; each consumes per-space npz archives
 under embeddings/<dataset>/ (built by backbones/embed_public.py for public
 towers, downloaded for adapted/self-supervised ones) and the text libraries
-in data/text/.
+in data/text/ (attached by backbones/embed_texts.py).
 """
 import argparse
 import subprocess
@@ -24,14 +25,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
+SPACES = ["clap_l", "clap_m", "da_clap_l", "ssl_cqt_1", "ssl_cqt_2", "ssl_cqt_3p"]
 PAPER = {
-    "shipsear": ("86.38 +/- 1.01", ["clap_l", "da_clap_l", "da_clap_m_a",
-                                    "da_clap_m_b", "da_htsat", "da_beats", "proj_ast"]),
-    "deepship": ("77.50 +/- 0.79", ["clap_l", "clap_m", "da_clap_l",
-                                    "ssl_cqt_1", "ssl_cqt_2", "ssl_cqt_3p"]),
-    "iara": ("68.43 +/- 1.30", ["clap_l", "clap_m", "da_clap_l"]),
+    "shipsear": ("85.92 +/- 0.41", SPACES),
+    "deepship": ("78.25 (closed form)", SPACES),
+    "iara": ("70.03 +/- 0.01", SPACES),
 }
-WEIGHTS_TAG = "v1.0"  # release tag carrying tadc_spaces.zip (frozen space archives)
+WEIGHTS_TAG = "v2.0"  # release tag carrying tadc_spaces.zip (frozen space archives)
 
 
 def _weights_url():

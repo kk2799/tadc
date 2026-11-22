@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """Embed audio blocks with the public towers used by TADC.
 
-Covers the three publicly downloadable spaces: CLAP-L (LAION
-clap-htsat-fused, 10-s windows at 48 kHz), CLAP-M (MS-CLAP 2023), and AST
-(audio-spectrogram-transformer, for the projected PROJ-AST space on ShipsEar).
-The domain-adapted and self-supervised members (DA towers, SSL-CQT instances)
+Covers the two publicly downloadable spaces: CLAP-L (LAION
+clap-htsat-fused, 10-s windows at 48 kHz) and CLAP-M (MS-CLAP 2023).
+The domain-adapted and self-supervised members (DA-CLAP, SSL-CQT instances)
 ship as frozen embedding archives in the release; see backbones/README.md.
 
 Usage:

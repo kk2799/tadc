@@ -1,83 +1,149 @@
 # -*- coding: utf-8 -*-
 """Collect the domain-adapted / self-supervised space archives from the
-experiment tree into the release download layout (tadc_spaces.zip).
+experiment tree into the release layout (embeddings/ + dist/tadc_spaces.zip).
 
-Layout produced (mirrors what `reproduce.py --download-weights` extracts):
-  embeddings/shipsear/{da_clap_l,da_clap_m_a,da_clap_m_b,da_htsat,da_beats}.npz
-  embeddings/deepship/{da_clap_l,ssl_cqt_1,ssl_cqt_2,ssl_cqt_3p}.npz
-  embeddings/iara/{da_clap_l}.npz
+Unified zero-contact pool, six spaces per dataset; the public towers
+(clap_l, clap_m) are NOT packed -- they are rebuilt by embed_public.py from
+the public checkpoints, and their text sides are attached by embed_texts.py.
 
-Each npz carries the audio-block embeddings plus labels (E/y_tr, E/y_te or
-E/y/iid per protocol). The public towers (clap_l, clap_m, ast) are NOT
-packed — they are rebuilt by embed_public.py from the public checkpoints.
-Text sides (Tx/labs) are attached at the user's machine by embed_texts.py.
+Layout produced:
+  embeddings/shipsear/{da_clap_l, ssl_cqt_1, ssl_cqt_2, ssl_cqt_3p}.npz
+      y_tr/y_te carry the nine ship-type labels (fitting is type-level; the
+      runner maps predictions to the five aggregated classes A-E).
+  embeddings/deepship/{da_clap_l, ssl_cqt_1, ssl_cqt_2, ssl_cqt_3p}.npz
+  embeddings/iara/{da_clap_l, ssl_cqt_1, ssl_cqt_2, ssl_cqt_3p}.npz
+      IARA spaces carry E/y/iid/j plus m (window-validity mask).
+
+The script also re-labels the public ShipsEar npz (clap_l/clap_m) to the
+nine-type level and removes the withdrawn greedy-pool archives
+(da_clap_m_a/b, da_htsat, da_beats, proj_ast).
 """
 import zipfile
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
-SRC = Path(__file__).resolve().parents[2] / "af3_experiment" / "results"  # relative to paper_submission_v3/code_release/backbones/
-SSL = SRC.parent.parent / "SPLASH" / "outputs"
-OUT = Path(__file__).resolve().parents[1] / "dist"
-MAP = {
-    # release name -> (source npz, protocol-specific key remap)
-    ("shipsear", "da_clap_l"): None,  # SE 域适应塔：见下方实际来源映射
-    ("deepship", "da_clap_l"): (SRC / "ds_theirsplit_emb.npz", "ED"),
-    ("iara", "da_clap_l"): (SRC / "iara_offcpa_da.npz", None),
-}
-
-
-def main():
-    OUT.mkdir(exist_ok=True)
-    z = zipfile.ZipFile(OUT / "tadc_spaces.zip", "w", zipfile.ZIP_DEFLATED)
-    # DS: da_clap_l = ED 字段（通用域适应塔）
-    src = np.load(SRC / "ds_theirsplit_emb.npz", allow_pickle=True)
-    n_tr = int(src["n_tr"])
-    y = src["y"].astype(str)
-    arr = dict(E_tr=src["ED"][:n_tr], y_tr=y[:n_tr], E_te=src["ED"][n_tr:], y_te=y[n_tr:])
-    z.writestr("embeddings/deepship/da_clap_l.npz", _npz_bytes(arr))
-    # DS: ssl_cqt_1..3 = d1b / d1bs43 / d1bs45p（贪心链入选的三实例）
-    for rel, fp in [("ssl_cqt_1", SSL / "d1b_selfsup_cqt_ds.npz"),
-                    ("ssl_cqt_2", SSL / "d1b_s43.npz"),
-                    ("ssl_cqt_3p", SSL / "d1b_s45.npz")]:
-        zd = np.load(fp, allow_pickle=True)
-        arr = dict(E_tr=zd["E_tr"], y_tr=zd["y_tr"].astype(str),
-                   E_te=zd["E_te"], y_te=zd["y_te"].astype(str))
-        z.writestr(f"embeddings/deepship/{rel}.npz", _npz_bytes(arr))
-    # IARA: da_clap_l（官方协议嵌入，含 iid）
-    zi = np.load(SRC / "iara_offcpa_da.npz", allow_pickle=True)
-    arr = dict(E=zi["E"], y=zi["y"].astype(str), iid=zi["iid"].astype(int))
-    z.writestr("embeddings/iara/da_clap_l.npz", _npz_bytes(arr))
-
-    # SE: 域适应/自监督塔（spaces56.npz: 485 train / 116 test 段级嵌入，1024 维）
-    z56 = np.load(SRC / "spaces56.npz", allow_pickle=True)
-    lab = np.load(Path(__file__).resolve().parent / "_se_labels.npz", allow_pickle=True)
-    yl_tr = lab["y_tr"].astype(str)
-    yl_te = lab["y_te"].astype(str)
-
-    se_map = {"da_clap_m_a": "da35pure", "da_clap_m_b": "da35text",
-              "da_htsat": "htsat_ta", "da_beats": "beats"}
-    for rel, key in se_map.items():
-        arr = dict(E_tr=z56[f"{key}_tr"], y_tr=yl_tr,
-                   E_te=z56[f"{key}_te"], y_te=yl_te)
-        z.writestr(f"embeddings/shipsear/{rel}.npz", _npz_bytes(arr))
-
-    # SE: da_clap_l（LAION 音频塔域适应，601 段 = 485 train + 116 test）
-    da = np.load(SRC.parent / "data_uart" / "laion_da_emb.npz", allow_pickle=True)
-    A = da["A"]
-    arr = dict(E_tr=A[:485], y_tr=yl_tr, E_te=A[485:], y_te=yl_te)
-    z.writestr("embeddings/shipsear/da_clap_l.npz", _npz_bytes(arr))
-
-    z.close()
-    print("packed ->", OUT / "tadc_spaces.zip")
+HERE = Path(__file__).resolve().parent
+REL = HERE.parents[0]                    # code_release/
+SRC = HERE.parents[2] / "af3_experiment" / "results"
+DATA = HERE.parents[2] / "af3_experiment" / "data_uart"
+SSL_SE = {"ssl_cqt_1": "se_ssl_cross_seg.npz",
+          "ssl_cqt_2": "se_ssl_cross_seg_s43.npz",
+          "ssl_cqt_3p": "se_ssl_cross_seg_s45.npz"}
+SSL_IA = {"ssl_cqt_1": "cross_ssl_iara_s42.npz",
+          "ssl_cqt_2": "cross_ssl_iara_s43.npz",
+          "ssl_cqt_3p": "cross_ssl_iara_s45.npz"}
 
 
-def _npz_bytes(arr):
+def npz_bytes(arr):
     import io
     buf = io.BytesIO()
     np.savez(buf, **arr)
     return buf.getvalue()
+
+
+def se_meta():
+    df = pd.read_csv(DATA / "uart_meta_v2.csv").reset_index(drop=True)
+    tr = (df.split == "train").values
+    return df, tr
+
+
+def pack_shipsear(z):
+    df, tr = se_meta()
+    y_tr = df.type.values[tr].astype(str)
+    y_te = df.type.values[~tr].astype(str)
+
+    # da_clap_l: LAION audio tower, domain-adapted (experiment source:
+    # crossda_se_emb.npz, 601 blocks with its own split column)
+    zd = np.load(SRC / "crossda_se_emb.npz", allow_pickle=True)
+    m_da = zd["split"].astype(str) == "train"
+    z.writestr("embeddings/shipsear/da_clap_l.npz",
+               npz_bytes(dict(E_tr=zd["E"][m_da], y_tr=y_tr,
+                              E_te=zd["E"][~m_da], y_te=y_te)))
+
+    # ssl_cqt instances: normalized, split from their own split column
+    for rel, fn in SSL_SE.items():
+        zd = np.load(SRC / fn, allow_pickle=True)
+        E = zd["E"] / (np.linalg.norm(zd["E"], axis=1, keepdims=True) + 1e-9)
+        m = zd["split"].astype(str) == "train"
+        z.writestr(f"embeddings/shipsear/{rel}.npz",
+                   npz_bytes(dict(E_tr=E[m], y_tr=y_tr, E_te=E[~m], y_te=y_te)))
+
+    # re-label the public towers to the nine-type level (fitting is type-level)
+    for pub in ["clap_l", "clap_m"]:
+        fp = REL / "embeddings" / "shipsear" / f"{pub}.npz"
+        if fp.exists():
+            d = dict(np.load(fp, allow_pickle=True))
+            if len(set(d["y_tr"].tolist())) == 5:
+                d["y_tr"], d["y_te"] = y_tr, y_te
+                np.savez(fp, **d)
+                print(f"re-labelled {pub} to nine-type labels")
+
+    # withdraw the greedy-pool archives no longer in the unified pool
+    for stale in ["da_clap_m_a", "da_clap_m_b", "da_htsat", "da_beats", "proj_ast"]:
+        fp = REL / "embeddings" / "shipsear" / f"{stale}.npz"
+        if fp.exists():
+            fp.unlink()
+            print(f"removed stale {stale}.npz")
+
+
+def pack_deepship(z):
+    # experiment sources: ds_zc() in _zc_members.py
+    zc = np.load(SRC / "crossda_ds_refemb.npz", allow_pickle=True)
+    z.writestr("embeddings/deepship/da_clap_l.npz",
+               npz_bytes(dict(E_tr=zc["E_tr"], y_tr=zc["y_tr"].astype(str),
+                              E_te=zc["E_te"], y_te=zc["y_te"].astype(str))))
+    for t, rel in [("s42", "ssl_cqt_1"), ("s43", "ssl_cqt_2"), ("s45", "ssl_cqt_3p")]:
+        zx = np.load(SRC / f"cross_ssl_ds_{t}.npz", allow_pickle=True)
+        z.writestr(f"embeddings/deepship/{rel}.npz",
+                   npz_bytes(dict(E_tr=zx["E_tr"], y_tr=zx["y_tr"].astype(str),
+                                  E_te=zx["E_te"], y_te=zx["y_te"].astype(str))))
+
+
+def pack_iara(z):
+    zl = np.load(SRC / "iara_offcpa_laion.npz", allow_pickle=True)
+    iid = zl["iid"].astype(int)
+    jj = zl["j"]
+    y = zl["y"].astype(str)
+    n = len(iid)
+    # experiment source for the domain-adapted space: crossda_iara_emb.npz
+    zia = np.load(SRC / "crossda_iara_emb.npz", allow_pickle=True)
+    assert np.array_equal(zia["iid"].astype(int), iid)
+    z.writestr("embeddings/iara/da_clap_l.npz",
+               npz_bytes(dict(E=zia["E"], y=y, iid=iid)))
+    key2row = {(int(a), int(b)): k for k, (a, b) in enumerate(zip(iid, jj))}
+    for rel, fn in SSL_IA.items():
+        E = np.full((n, 512), np.nan)
+        with np.load(SRC / fn, allow_pickle=True) as zd:
+            for fi, name in enumerate(zd["names"].tolist()):
+                p = name[:-4].split("_")
+                r = key2row.get((int(p[0]), int(p[1])))
+                if r is not None:
+                    E[r] = zd["E"][fi]
+        m = ~np.isnan(E[:, 0])
+        z.writestr(f"embeddings/iara/{rel}.npz",
+                   npz_bytes(dict(E=E, y=y, iid=iid, m=m)))
+
+
+def main():
+    (REL / "dist").mkdir(exist_ok=True)
+    out = REL / "dist" / "tadc_spaces.zip"
+    z = zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED)
+    pack_shipsear(z)
+    pack_deepship(z)
+    pack_iara(z)
+    z.close()
+    # also lay the archives out under embeddings/ for local verification
+    with zipfile.ZipFile(out) as zf:
+        zf.extractall(REL)
+    print(f"packed -> {out} ({len(zfile_names(out))} entries); "
+          f"extracted into embeddings/")
+
+
+def zfile_names(fp):
+    with zipfile.ZipFile(fp) as zf:
+        return zf.namelist()
 
 
 if __name__ == "__main__":
